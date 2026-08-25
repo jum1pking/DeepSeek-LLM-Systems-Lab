@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Virtual environments
+.venv/
+venv/
+
+# IDE
+.vscode/
+.idea/
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Model / dataset / checkpoints
+data/
+models/
+checkpoints/
+*.safetensors
+*.pt
+*.pth
+*.ckpt
+
+# Hugging Face cache
+.cache/
+huggingface/
+
+# Training logs
+wandb/
+rums/
+
+#profilling raw files
+*.nsys-rep
+*.ncu-rep
+
+#OS
+.DS_Store
+Thumbs.db
+
+
