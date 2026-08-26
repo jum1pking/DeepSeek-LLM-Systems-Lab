@@ -1,0 +1,2 @@
+timestamp,model,gpu,dtype,input_tokens,output_tokens,average_latency_s,average_throughput_tok_s,peak_vram_gb
+2026-08-26T18:09:50,deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B,NVIDIA GeForce RTX 5060 Laptop GPU,bfloat16,15,128,2.913,43.99,3.32

@@ -1,0 +1,8 @@
+{"messages":[{"role":"user","content":"What is distributed training?"},{"role":"assistant","content":"Distributed training uses multiple computing devices to collaboratively train a machine learning model."}]}
+{"messages":[{"role":"user","content":"What is data parallelism?"},{"role":"assistant","content":"Data parallelism places a copy of the model on each device and trains each copy on different subsets of the data."}]}
+{"messages":[{"role":"user","content":"What is model parallelism?"},{"role":"assistant","content":"Model parallelism splits a model across multiple devices so that different parts of the model execute on different hardware."}]}
+{"messages":[{"role":"user","content":"What is gradient accumulation?"},{"role":"assistant","content":"Gradient accumulation combines gradients from several micro-batches before performing an optimizer update."}]}
+{"messages":[{"role":"user","content":"What is LoRA?"},{"role":"assistant","content":"LoRA fine-tunes a model by training small low-rank matrices while keeping most pretrained parameters frozen."}]}
+{"messages":[{"role":"user","content":"Why is mixed precision training useful?"},{"role":"assistant","content":"Mixed precision training reduces memory usage and can improve throughput by using lower-precision numerical formats where appropriate."}]}
+{"messages":[{"role":"user","content":"What is GPU memory bandwidth?"},{"role":"assistant","content":"GPU memory bandwidth measures how quickly data can be transferred between GPU memory and its compute units."}]}
+{"messages":[{"role":"user","content":"What is an all-reduce operation?"},{"role":"assistant","content":"All-reduce aggregates values such as gradients across multiple devices and returns the combined result to every participating device."}]}
