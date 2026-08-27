@@ -1,0 +1,44 @@
+# Git
+.git
+.gitignore
+
+# Python virtual environments
+.venv/
+venv/
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+# IDE
+.idea/
+.vscode/
+
+# Environment variables / secrets
+.env
+.env.*
+!.env.example
+
+# Model weights / checkpoints
+models/
+checkpoints/
+*.safetensors
+*.pt
+*.pth
+*.ckpt
+
+# Hugging Face / package cache
+.cache/
+huggingface/
+
+# Training logs
+wandb/
+runs/
+
+# Profilling files
+*.nsys-rep
+*.ncu-rep
+
+# OS files
+.DS_Store
+Thumbs.db

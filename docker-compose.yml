@@ -1,0 +1,21 @@
+services:
+  deepseek:
+    build:
+      context: .
+      dockerfile: Dockerfile
+
+    image: deepseek-llm-systems-lab:phase2
+
+    working_dir: /workspace
+
+    volumes:
+      - .:/workspace
+      - ${HOME}/.cache/huggingface:/root/.cache/huggingface
+
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
