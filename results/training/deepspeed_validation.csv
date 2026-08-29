@@ -1,0 +1,3 @@
+timestamp,test,model,gpu,zero_stage,checkpoint_tag,loaded_global_step,final_global_step,loss,peak_vram_gb,status
+2026-08-29T15:03:38,zero3_checkpoint_resume,deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B,NVIDIA GeForce RTX 5060 Laptop GPU,3,step_1,1,2,5.6774420738220215,1.4957876205444336,PASS
+2026-08-29T15:15:30,zero3_checkpoint_save,deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B,NVIDIA GeForce RTX 5060 Laptop GPU,3,step_1,,1,5.684251308441162,1.4957876205444336,PASS

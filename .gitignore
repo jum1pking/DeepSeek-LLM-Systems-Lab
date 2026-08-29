@@ -36,6 +36,11 @@ rums/
 #profilling raw files
 *.nsys-rep
 *.ncu-rep
+*.sqlite
+*.pt.trace.json
+
+# DeepSpeed runtime checkpoint
+results/training/deepspeed_zero3_checkpoint/
 
 #OS
 .DS_Store
