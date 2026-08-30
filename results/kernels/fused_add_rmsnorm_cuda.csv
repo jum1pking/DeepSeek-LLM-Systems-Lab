@@ -1,0 +1,6 @@
+backend,implementation,gpu,dtype,tokens,hidden_size,shape,eps,threads_per_block,items_per_thread,warmup_runs,benchmark_runs,latency_us,effective_bandwidth_gbps,max_abs_diff_vs_pytorch,max_abs_error_vs_fp32
+cuda,fused_add_rmsnorm,NVIDIA GeForce RTX 5060 Laptop GPU,bfloat16,1,1536,"[1, 1536]",1e-06,256,6,50,200,7.26,1.692,0.0,0.011855602264404297
+cuda,fused_add_rmsnorm,NVIDIA GeForce RTX 5060 Laptop GPU,bfloat16,16,1536,"[16, 1536]",1e-06,256,6,50,200,7.943,18.95,0.0,0.025812149047851562
+cuda,fused_add_rmsnorm,NVIDIA GeForce RTX 5060 Laptop GPU,bfloat16,128,1536,"[128, 1536]",1e-06,256,6,50,200,6.51,181.675,0.0078125,0.03083324432373047
+cuda,fused_add_rmsnorm,NVIDIA GeForce RTX 5060 Laptop GPU,bfloat16,512,1536,"[512, 1536]",1e-06,256,6,50,200,9.914,476.274,0.001953125,0.030759811401367188
+cuda,fused_add_rmsnorm,NVIDIA GeForce RTX 5060 Laptop GPU,bfloat16,2048,1536,"[2048, 1536]",1e-06,256,6,50,200,27.462,687.408,0.0078125,0.030875205993652344
