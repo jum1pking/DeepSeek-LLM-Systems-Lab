@@ -1,0 +1,3 @@
+timestamp,model,gpu,dtype,backend,runner,flashinfer_sampler,prefix_caching,input_tokens,output_tokens,average_ttft_ms,average_tpot_ms,average_decode_throughput_tok_s,average_end_to_end_latency_s,average_end_to_end_throughput_tok_s,average_queue_time_ms,average_wall_latency_s,num_cached_tokens
+2026-08-30T11:40:39,deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B,NVIDIA GeForce RTX 5060 Laptop GPU,bfloat16,vllm,v1,False,False,15,128,34.005,14.67,68.84,1.897,68.14,0.009,1.899,0
+2026-08-30T11:44:33,deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B,NVIDIA GeForce RTX 5060 Laptop GPU,bfloat16,vllm,v1,False,False,15,128,30.74,12.794,78.16,1.656,77.32,0.011,1.658,0

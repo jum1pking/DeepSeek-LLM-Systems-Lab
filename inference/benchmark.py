@@ -1,76 +1,47 @@
 import time
+from datetime import datetime
 
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-import csv
-from pathlib import Path
-from datetime import datetime
+import common
 
-MODEL_NAME = "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B"
 
-PROMPT = "Explain in one sentence what distributed training is."
+def load_model_and_inputs():
+    tokenizer = AutoTokenizer.from_pretrained(common.MODEL_NAME)
 
-tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
+    model = AutoModelForCausalLM.from_pretrained(
+        common.MODEL_NAME,
+        dtype=common.DTYPE,
+        device_map=common.DEVICE,
+    )
 
-model = AutoModelForCausalLM.from_pretrained(
-    MODEL_NAME,
-    dtype=torch.bfloat16,
-    device_map="cuda"
-)
+    prompt = tokenizer.apply_chat_template(
+        common.build_messages(),
+        tokenize=False,
+        add_generation_prompt=True,
+    )
 
-messages = [
-    {
-        "role": "user",
-        "content": PROMPT,
-    }
-]
+    inputs = tokenizer(
+        prompt,
+        return_tensors="pt",
+    ).to(common.DEVICE)
 
-prompt = tokenizer.apply_chat_template(
-    messages,
-    tokenize=False,
-    add_generation_prompt=True,
-)
+    return model, tokenizer, inputs
 
-inputs = tokenizer(
-    prompt,
-    return_tensors="pt",
-).to("cuda")
 
-# Reset VRAM statistics before the measured generation.
-torch.cuda.reset_peak_memory_stats()
-
-# CUDA operations are asynchronous, so synchronize before timing.
-torch.cuda.synchronize()
-WARMUP_RUNS = 1
-BENCHMARK_RUNS = 5
-print("Warming up...")
-
-for _ in range(WARMUP_RUNS):
-    with torch.inference_mode():
-        model.generate(
-            **inputs,
-            max_new_tokens=32,
-            do_sample=False,
-        )
-
-torch.cuda.synchronize()
-
-latencies = []
-throughputs = []
-peak_vrams = []
-
-print("Benchmarking...")
-for i in range(BENCHMARK_RUNS):
+def run_once(model, inputs, max_new_tokens):
+    # Reset VRAM statistics before the measured generation.
     torch.cuda.reset_peak_memory_stats()
 
+    # CUDA operations are asynchronous, so synchronize before timing.
     torch.cuda.synchronize()
     start_time = time.perf_counter()
 
     with torch.inference_mode():
         outputs = model.generate(
             **inputs,
-            max_new_tokens=128,
+            max_new_tokens=max_new_tokens,
             do_sample=False,
         )
 
@@ -80,60 +51,90 @@ for i in range(BENCHMARK_RUNS):
     input_tokens = inputs["input_ids"].shape[1]
     output_tokens = outputs.shape[1] - input_tokens
 
-    latency =end_time - start_time
+    latency = end_time - start_time
     throughput = output_tokens / latency
-    peak_vram = torch.cuda.max_memory_allocated() / 1024**3
+    peak_vram_gb = torch.cuda.max_memory_allocated() / 1024**3
 
-    latencies.append(latency)
-    throughputs.append(throughput)
-    peak_vrams.append(peak_vram)
+    return {
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "latency_s": latency,
+        "throughput_tok_s": throughput,
+        "peak_vram_gb": peak_vram_gb,
+    }
 
-    print(
-        f"Run {i + 1}:"
-        f"{latency:.3f} s | "
-        f"{throughput:.2f} tokens/s | "
-        f"{peak_vram:.2f} GB"
+
+def warmup(model, inputs):
+    print("Warming up...")
+
+    for _ in range(common.HF_WARMUP_RUNS):
+        run_once(
+            model=model,
+            inputs=inputs,
+            max_new_tokens=common.WARMUP_NEW_TOKENS,
+        )
+
+
+def main():
+    model, tokenizer, inputs = load_model_and_inputs()
+
+    warmup(model, inputs)
+
+    runs = []
+
+    print("Benchmarking...")
+
+    for i in range(common.BENCHMARK_RUNS):
+        result = run_once(
+            model=model,
+            inputs=inputs,
+            max_new_tokens=common.BENCHMARK_NEW_TOKENS,
+        )
+        runs.append(result)
+
+        print(
+            f"Run {i + 1}: "
+            f"{result['latency_s']:.3f} s | "
+            f"{result['throughput_tok_s']:.2f} tokens/s | "
+            f"{result['peak_vram_gb']:.2f} GB"
+        )
+
+    average_latency = common.average(
+        [run["latency_s"] for run in runs]
     )
-
-average_latency = sum(latencies) / len(latencies)
-average_throughput = sum(throughputs) / len(throughputs)
-max_peak_vram = max(peak_vrams)
-
-print("=== Hugging Face Benchmark ===")
-print(f"Input tokens:       {input_tokens}")
-print(f"Output tokens:      {output_tokens}")
-print(f"Generation latency: {average_latency:.3f} s")
-print(f"Throughput:         {average_throughput: .2f} tokens/s")
-print(f"Peak VRAM:          {max_peak_vram: .2f} GB")
-
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-RESULT_DIR = PROJECT_ROOT / "results" / "inference"
-RESULT_DIR.mkdir(parents=True, exist_ok=True)
-
-RESULT_FILE = RESULT_DIR / "hf_baseline.csv"
-
-result ={
-    "timestamp": datetime.now().isoformat(timespec="seconds"),
-    "model": MODEL_NAME,
-    "gpu": torch.cuda.get_device_name(0),
-    "dtype": "bfloat16",
-    "input_tokens": input_tokens,
-    "output_tokens": output_tokens,
-    "average_latency_s": round(average_latency, 3),
-    "average_throughput_tok_s": round(average_throughput, 2),
-    "peak_vram_gb": round(max_peak_vram, 2),
-}
-
-file_exists = RESULT_FILE.exists()
-with RESULT_FILE.open("a", newline="") as f:
-    writer = csv.DictWriter(
-        f,
-        fieldnames=result.keys(),
+    average_throughput = common.average(
+        [run["throughput_tok_s"] for run in runs]
     )
+    max_peak_vram = max(run["peak_vram_gb"] for run in runs)
 
-    if not file_exists:
-        writer.writeheader()
+    input_tokens = runs[-1]["input_tokens"]
+    output_tokens = runs[-1]["output_tokens"]
 
-    writer.writerow(result)
+    print("=== Hugging Face Benchmark ===")
+    print(f"Input tokens:       {input_tokens}")
+    print(f"Output tokens:      {output_tokens}")
+    print(f"Generation latency: {average_latency:.3f} s")
+    print(f"Throughput:         {average_throughput:.2f} tokens/s")
+    print(f"Peak VRAM:          {max_peak_vram:.2f} GB")
 
-print(f"Results saved to: {RESULT_FILE}")
+    result = {
+        "timestamp": datetime.now().isoformat(timespec="seconds"),
+        "model": common.MODEL_NAME,
+        "gpu": torch.cuda.get_device_name(0),
+        "dtype": common.DTYPE_NAME,
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "average_latency_s": round(average_latency, 3),
+        "average_throughput_tok_s": round(average_throughput, 2),
+        "peak_vram_gb": round(max_peak_vram, 2),
+    }
+
+    result_file = common.save_result(
+        "hf_baseline.csv",
+        result,
+    )
+    print(f"Results saved to: {result_file}")
+
+
+if __name__ == "__main__":
+    main()

@@ -1,77 +1,50 @@
 import torch
-from transformers import AutoTokenizer, AutoModelForCausalLM
 
-MODEL_NAME = "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B"
+import benchmark
+import common
 
-tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
 
-print("Loading model...")
+def run_once(model, inputs):
+    torch.cuda.reset_peak_memory_stats()
 
-model = AutoModelForCausalLM.from_pretrained(
-    MODEL_NAME,
-    dtype = torch.bfloat16,
-    device_map="cuda"
-)
+    with torch.inference_mode():
+        outputs = model.generate(
+            **inputs,
+            max_new_tokens=common.BENCHMARK_NEW_TOKENS,
+            do_sample=False,
+        )
 
-print("Model loaded successfully")
+    peak_vram_gb = torch.cuda.max_memory_allocated() / 1024**3
 
-print("Tokenizer loaded successfully.")
+    return outputs, peak_vram_gb
 
-messages =[
-    {
-        "role": "user",
-        "content": "Explain in one sentence what distributed training is."
-    }
-]
 
-prompt = tokenizer.apply_chat_template(
-    messages,
-    tokenize = False,
-    add_generation_prompt=True,
-)
+def main():
+    print("Loading model...")
+    model, tokenizer, inputs = benchmark.load_model_and_inputs()
+    print("Model loaded successfully")
+    print("Tokenizer loaded successfully.")
 
-inputs = tokenizer(
-    prompt,
-    return_tensors="pt",
-).to("cuda")
+    print("Generating...")
 
-# print the struct of prompt
-
-# print(prompt)
-# print(inputs["input_ids"].shape)
-
-token_ids = inputs["input_ids"][0]
-
-# print input by token
-
-# print("Token IDs:")
-# print(token_ids.tolist())
-#
-# print("\nTokens:")
-# print(tokenizer.convert_ids_to_tokens(token_ids))
-
-print("Generating...")
-
-torch.cuda.reset_peak_memory_stats()
-
-with torch.inference_mode():
-    outputs = model.generate(
-        **inputs,
-        max_new_tokens=128,
-        do_sample=False,
+    outputs, peak_vram_gb = run_once(
+        model=model,
+        inputs=inputs,
     )
 
-generated_tokens = outputs[0][inputs["input_ids"].shape[1]:]
+    generated_tokens = outputs[0][inputs["input_ids"].shape[1]:]
 
-response = tokenizer.decode(
-    generated_tokens,
-    skip_special_tokens=True,
-)
+    response = tokenizer.decode(
+        generated_tokens,
+        skip_special_tokens=True,
+    )
 
-peak_vram_gb = torch.cuda.max_memory_allocated() / 1024**3
+    print("\n=== Model Response ===")
+    print(response)
 
-print("\n=== Model Response ===")
-print(response)
+    print("\n=== GPU Memory ===")
+    print(f"Peak VRAM: {peak_vram_gb:.2f} GB")
 
-print("\n=== GPU Memory ===")
-print(f"Peak VRAM: {peak_vram_gb:2f} GB")
+
+if __name__ == "__main__":
+    main()
