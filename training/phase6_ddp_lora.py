@@ -39,9 +39,8 @@ def setup_distributed():
     if not torch.cuda.is_available():
         raise RuntimeError("CUDA is required for the Phase 6 DDP benchmark.")
 
-    launched_by_torchrun = "LOCAL_RANK" in os.environ
-
-    if launched_by_torchrun:
+    # 2-GPU cloud run: torch.distributed.run provides these variables.
+    if "LOCAL_RANK" in os.environ:
         local_rank = int(os.environ["LOCAL_RANK"])
         log(
             "Distributed setup: torchrun environment detected "
@@ -50,9 +49,9 @@ def setup_distributed():
             f"WORLD_SIZE={os.environ.get('WORLD_SIZE')})."
         )
     else:
-        # 6.2a is intentionally allowed to run with plain Python.
-        # We still create a real 1-process NCCL process group so the
-        # benchmark exercises the same DDP path as the 2-GPU run.
+        # 1-GPU baseline: run with plain Python.
+        # Still initialize a real NCCL process group so 1-GPU and 2-GPU
+        # execute the same DDP code path.
         local_rank = 0
         os.environ.setdefault("LOCAL_RANK", "0")
         os.environ.setdefault("RANK", "0")
@@ -104,18 +103,12 @@ def build_model(local_rank, device):
         r=8,
         lora_alpha=16,
         lora_dropout=0.0,
-        target_modules=[
-            "q_proj",
-            "v_proj",
-        ],
+        target_modules=["q_proj", "v_proj"],
         bias="none",
         task_type=TaskType.CAUSAL_LM,
     )
 
-    model = get_peft_model(
-        model,
-        lora_config,
-    )
+    model = get_peft_model(model, lora_config)
     log("LoRA: adapters injected.")
 
     model = DDP(
@@ -160,10 +153,7 @@ def build_batch(device, vocab_size):
     input_ids = torch.randint(
         low=0,
         high=vocab_size,
-        size=(
-            PER_DEVICE_BATCH_SIZE,
-            SEQUENCE_LENGTH,
-        ),
+        size=(PER_DEVICE_BATCH_SIZE, SEQUENCE_LENGTH),
         generator=generator,
         device=device,
         dtype=torch.long,
@@ -206,15 +196,11 @@ def synchronize(device):
     torch.cuda.synchronize(device)
 
 
-def benchmark(
-    model,
-    optimizer,
-    batch,
-    device,
-):
+def benchmark(model, optimizer, batch, device):
     model.train()
+    rank = dist.get_rank()
 
-    if dist.get_rank() == 0:
+    if rank == 0:
         log(f"Warmup: starting {WARMUP_STEPS} step(s).")
 
     for step in range(WARMUP_STEPS):
@@ -223,18 +209,16 @@ def benchmark(
             optimizer=optimizer,
             batch=batch,
         )
-
-        if dist.get_rank() == 0:
+        if rank == 0:
             log(
                 f"Warmup: step {step + 1}/{WARMUP_STEPS}, "
                 f"loss={loss.item():.4f}"
             )
 
     synchronize(device)
-
     torch.cuda.reset_peak_memory_stats(device)
 
-    if dist.get_rank() == 0:
+    if rank == 0:
         log(f"Benchmark: starting {BENCHMARK_STEPS} step(s).")
 
     start = time.perf_counter()
@@ -246,8 +230,7 @@ def benchmark(
             optimizer=optimizer,
             batch=batch,
         )
-
-        if dist.get_rank() == 0:
+        if rank == 0:
             log(
                 f"Benchmark: step {step + 1}/{BENCHMARK_STEPS}, "
                 f"loss={final_loss.item():.4f}"
@@ -268,18 +251,12 @@ def benchmark(
     return {
         "total_time_s": total_time_s,
         "average_step_time_ms": (
-            total_time_s
-            / BENCHMARK_STEPS
-            * 1000
+            total_time_s / BENCHMARK_STEPS * 1000
         ),
         "global_tokens": global_tokens,
-        "tokens_per_second": (
-            global_tokens
-            / total_time_s
-        ),
+        "tokens_per_second": global_tokens / total_time_s,
         "peak_vram_gb": (
-            torch.cuda.max_memory_allocated(device)
-            / 1024**3
+            torch.cuda.max_memory_allocated(device) / 1024**3
         ),
         "final_loss": (
             final_loss.item()
@@ -314,9 +291,6 @@ def save_result(row):
 
 
 def main():
-    local_rank = None
-    device = None
-
     try:
         local_rank, device = setup_distributed()
 
@@ -343,9 +317,7 @@ def main():
             device=device,
         )
 
-        optimizer = build_optimizer(
-            model=model
-        )
+        optimizer = build_optimizer(model)
 
         batch = build_batch(
             device=device,
@@ -371,8 +343,7 @@ def main():
                 "world_size": world_size,
                 "per_device_batch_size": PER_DEVICE_BATCH_SIZE,
                 "global_batch_size": (
-                    PER_DEVICE_BATCH_SIZE
-                    * world_size
+                    PER_DEVICE_BATCH_SIZE * world_size
                 ),
                 "sequence_length": SEQUENCE_LENGTH,
                 "warmup_steps": WARMUP_STEPS,
@@ -399,9 +370,7 @@ def main():
                 f"Final loss:   "
                 f"{result['final_loss']:.4f}"
             )
-            log(
-                f"Saved:        {RESULT_FILE}"
-            )
+            log(f"Saved:        {RESULT_FILE}")
 
     finally:
         if dist.is_initialized():
