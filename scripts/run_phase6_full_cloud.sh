@@ -4,7 +4,9 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
-VENV="/workspace/phase6-venv"
+LOCAL_VENV="/root/phase6-venv"
+VENV_ARCHIVE="/workspace/phase6-venv.tar"
+
 export HF_HOME="/workspace/huggingface-cache"
 export HUGGINGFACE_HUB_CACHE="$HF_HOME/hub"
 export PYTHONUNBUFFERED=1
@@ -19,14 +21,44 @@ mkdir -p \
     "$LOG_DIR" \
     "$PROFILE_DIR"
 
-if [[ ! -x "$VENV/bin/python" ]]; then
-    echo "Persistent Phase 6 venv not found."
-    echo "Running preparation now..."
-    bash scripts/prepare_phase6_cloud.sh
+restore_venv() {
+    if [[ ! -f "$VENV_ARCHIVE" ]]; then
+        echo "ERROR: persistent Phase 6 venv archive not found:" >&2
+        echo "  $VENV_ARCHIVE" >&2
+        echo >&2
+        echo "Run this first, preferably with CPU Only:" >&2
+        echo "  bash scripts/prepare_phase6_cloud.sh" >&2
+        exit 1
+    fi
+
+    echo "Restoring Phase 6 venv from Network Volume..."
+    rm -rf "$LOCAL_VENV"
+
+    tar -xf "$VENV_ARCHIVE" \
+        -C /root
+}
+
+if [[ ! -x "$LOCAL_VENV/bin/python" ]]; then
+    restore_venv
 fi
 
 # shellcheck disable=SC1091
-source "$VENV/bin/activate"
+source "$LOCAL_VENV/bin/activate"
+
+echo "=== Verify persistent model cache ==="
+
+python - <<'PY'
+from huggingface_hub import snapshot_download
+
+MODEL_NAME = "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B"
+
+path = snapshot_download(
+    repo_id=MODEL_NAME,
+    local_files_only=True,
+)
+
+print("Using cached model:", path)
+PY
 
 GPU_COUNT="$(
 python - <<'PY'
