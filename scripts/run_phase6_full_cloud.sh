@@ -4,9 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
-LOCAL_VENV="/root/phase6-venv"
-VENV_ARCHIVE="/workspace/phase6-venv.tar"
-
+VENV="/workspace/phase6-venv"
 export HF_HOME="/workspace/huggingface-cache"
 export HUGGINGFACE_HUB_CACHE="$HF_HOME/hub"
 export PYTHONUNBUFFERED=1
@@ -21,47 +19,19 @@ mkdir -p \
     "$LOG_DIR" \
     "$PROFILE_DIR"
 
-restore_venv() {
-    if [[ ! -f "$VENV_ARCHIVE" ]]; then
-        echo "ERROR: persistent Phase 6 venv archive not found:" >&2
-        echo "  $VENV_ARCHIVE" >&2
-        echo >&2
-        echo "Run this first, preferably with CPU Only:" >&2
-        echo "  bash scripts/prepare_phase6_cloud.sh" >&2
-        exit 1
-    fi
-
-    echo "Restoring Phase 6 venv from Network Volume..."
-    rm -rf "$LOCAL_VENV"
-
-    tar -xf "$VENV_ARCHIVE" \
-        -C /root
-}
-
-if [[ ! -x "$LOCAL_VENV/bin/python" ]]; then
-    restore_venv
+if [[ ! -x "$VENV/bin/python" ]]; then
+    echo "Persistent Phase 6 venv not found."
+    echo "Running preparation now..."
+    bash scripts/prepare_phase6_cloud.sh
 fi
 
 # shellcheck disable=SC1091
-source "$LOCAL_VENV/bin/activate"
+source "$VENV/bin/activate"
 
-echo "=== Verify persistent model cache ==="
-
-python - <<'PY'
-from huggingface_hub import snapshot_download
-
-MODEL_NAME = "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B"
-
-path = snapshot_download(
-    repo_id=MODEL_NAME,
-    local_files_only=True,
-)
-
-print("Using cached model:", path)
-PY
+PYTHON="$VENV/bin/python"
 
 GPU_COUNT="$(
-python - <<'PY'
+"$PYTHON" - <<'PY'
 import torch
 print(torch.cuda.device_count())
 PY
@@ -88,7 +58,7 @@ mkdir -p "$PROFILE_DIR"
 echo "=== Environment ===" \
     | tee "$RESULT_DIR/phase6_environment.txt"
 
-python - <<'PY' \
+"$PYTHON" - <<'PY' \
     | tee -a "$RESULT_DIR/phase6_environment.txt"
 import sys
 import torch
@@ -118,7 +88,7 @@ nvidia-smi topo -m \
 echo
 echo "=== 6.1 NCCL AllReduce ==="
 
-torchrun \
+"$PYTHON" -m torch.distributed.run \
     --standalone \
     --nproc-per-node=2 \
     training/phase6_nccl_allreduce.py \
@@ -128,9 +98,7 @@ echo
 echo "=== 6.2a 1-GPU DDP baseline ==="
 
 CUDA_VISIBLE_DEVICES=0 \
-torchrun \
-    --standalone \
-    --nproc-per-node=1 \
+"$PYTHON" \
     training/phase6_ddp_lora.py \
     2>&1 | tee "$LOG_DIR/02_ddp_1gpu.log"
 
@@ -138,7 +106,7 @@ echo
 echo "=== 6.2b 2-GPU DDP ==="
 
 CUDA_VISIBLE_DEVICES=0,1 \
-torchrun \
+"$PYTHON" -m torch.distributed.run \
     --standalone \
     --nproc-per-node=2 \
     training/phase6_ddp_lora.py \
@@ -148,7 +116,7 @@ echo
 echo "=== 6.3 2-GPU FSDP2 ==="
 
 CUDA_VISIBLE_DEVICES=0,1 \
-torchrun \
+"$PYTHON" -m torch.distributed.run \
     --standalone \
     --nproc-per-node=2 \
     training/phase6_fsdp2_lora.py \
@@ -158,7 +126,7 @@ echo
 echo "=== 6.4 2-GPU DeepSpeed ZeRO-3 ==="
 
 CUDA_VISIBLE_DEVICES=0,1 \
-torchrun \
+"$PYTHON" -m torch.distributed.run \
     --standalone \
     --nproc-per-node=2 \
     training/phase6_zero3_lora.py \
@@ -168,7 +136,7 @@ echo
 echo "=== 6.5a DDP communication profile ==="
 
 CUDA_VISIBLE_DEVICES=0,1 \
-torchrun \
+"$PYTHON" -m torch.distributed.run \
     --standalone \
     --nproc-per-node=2 \
     training/phase6_profile.py \
@@ -179,7 +147,7 @@ echo
 echo "=== 6.5b FSDP2 communication profile ==="
 
 CUDA_VISIBLE_DEVICES=0,1 \
-torchrun \
+"$PYTHON" -m torch.distributed.run \
     --standalone \
     --nproc-per-node=2 \
     training/phase6_profile.py \
@@ -189,7 +157,7 @@ torchrun \
 echo
 echo "=== Phase 6 summary ==="
 
-python - <<'PY'
+"$PYTHON" - <<'PY'
 import csv
 from pathlib import Path
 

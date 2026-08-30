@@ -1,7 +1,7 @@
 import csv
 import os
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import torch
@@ -31,28 +31,74 @@ RESULT_FILE = (
 )
 
 
-def setup_distributed():
-    local_rank = int(os.environ["LOCAL_RANK"])
-    torch.cuda.set_device(local_rank)
+def log(message):
+    print(message, flush=True)
 
+
+def setup_distributed():
+    if not torch.cuda.is_available():
+        raise RuntimeError("CUDA is required for the Phase 6 DDP benchmark.")
+
+    launched_by_torchrun = "LOCAL_RANK" in os.environ
+
+    if launched_by_torchrun:
+        local_rank = int(os.environ["LOCAL_RANK"])
+        log(
+            "Distributed setup: torchrun environment detected "
+            f"(LOCAL_RANK={local_rank}, "
+            f"RANK={os.environ.get('RANK')}, "
+            f"WORLD_SIZE={os.environ.get('WORLD_SIZE')})."
+        )
+    else:
+        # 6.2a is intentionally allowed to run with plain Python.
+        # We still create a real 1-process NCCL process group so the
+        # benchmark exercises the same DDP path as the 2-GPU run.
+        local_rank = 0
+        os.environ.setdefault("LOCAL_RANK", "0")
+        os.environ.setdefault("RANK", "0")
+        os.environ.setdefault("WORLD_SIZE", "1")
+        os.environ.setdefault("MASTER_ADDR", "127.0.0.1")
+        os.environ.setdefault("MASTER_PORT", "29500")
+        log(
+            "Distributed setup: direct-python 1-GPU mode; "
+            "creating a 1-process NCCL process group."
+        )
+
+    device = torch.device(f"cuda:{local_rank}")
+    torch.cuda.set_device(device)
+
+    log("Distributed setup: calling dist.init_process_group(...)")
     dist.init_process_group(
         backend="nccl",
-        device_id=torch.device(f"cuda:{local_rank}"),
+        init_method="env://",
+        timeout=timedelta(seconds=120),
+        device_id=device,
+    )
+    log(
+        "Distributed setup: process group ready "
+        f"(rank={dist.get_rank()}, world_size={dist.get_world_size()})."
     )
 
-    return local_rank
+    return local_rank, device
 
 
-def build_model(local_rank):
+def build_model(local_rank, device):
+    log(f"Model load: starting {MODEL_NAME}")
+
     model = AutoModelForCausalLM.from_pretrained(
         MODEL_NAME,
-        torch_dtype=DTYPE,
+        dtype=DTYPE,
         attn_implementation="sdpa",
         low_cpu_mem_usage=True,
     )
+    log("Model load: checkpoint loaded on CPU.")
 
     model.config.use_cache = False
-    model.to(local_rank)
+    model.to(device)
+    log(
+        "Model load: moved to GPU; "
+        f"allocated={torch.cuda.memory_allocated(device) / 1024**3:.2f} GB."
+    )
 
     lora_config = LoraConfig(
         r=8,
@@ -70,13 +116,17 @@ def build_model(local_rank):
         model,
         lora_config,
     )
+    log("LoRA: adapters injected.")
 
-    return DDP(
+    model = DDP(
         model,
         device_ids=[local_rank],
         output_device=local_rank,
         find_unused_parameters=False,
     )
+    log("DDP: wrapper constructed.")
+
+    return model
 
 
 def build_optimizer(model):
@@ -86,20 +136,26 @@ def build_optimizer(model):
         if parameter.requires_grad
     ]
 
-    return torch.optim.AdamW(
+    optimizer = torch.optim.AdamW(
         trainable_parameters,
         lr=LEARNING_RATE,
     )
 
-
-def build_batch(local_rank, vocab_size):
-    generator = torch.Generator(
-        device=f"cuda:{local_rank}"
+    trainable_count = sum(
+        parameter.numel()
+        for parameter in trainable_parameters
+    )
+    log(
+        "Optimizer: AdamW ready; "
+        f"trainable parameters={trainable_count:,}."
     )
 
-    generator.manual_seed(
-        20260830 + dist.get_rank()
-    )
+    return optimizer
+
+
+def build_batch(device, vocab_size):
+    generator = torch.Generator(device=device)
+    generator.manual_seed(20260830 + dist.get_rank())
 
     input_ids = torch.randint(
         low=0,
@@ -109,15 +165,19 @@ def build_batch(local_rank, vocab_size):
             SEQUENCE_LENGTH,
         ),
         generator=generator,
-        device=local_rank,
+        device=device,
         dtype=torch.long,
     )
 
-    attention_mask = torch.ones_like(
-        input_ids
-    )
-
+    attention_mask = torch.ones_like(input_ids)
     labels = input_ids.clone()
+
+    log(
+        "Batch: ready "
+        f"(batch={PER_DEVICE_BATCH_SIZE}, "
+        f"seq={SEQUENCE_LENGTH}, "
+        f"tokens/device={PER_DEVICE_BATCH_SIZE * SEQUENCE_LENGTH})."
+    )
 
     return {
         "input_ids": input_ids,
@@ -127,9 +187,7 @@ def build_batch(local_rank, vocab_size):
 
 
 def train_step(model, optimizer, batch):
-    optimizer.zero_grad(
-        set_to_none=True
-    )
+    optimizer.zero_grad(set_to_none=True)
 
     outputs = model(**batch)
     loss = outputs.loss
@@ -139,47 +197,63 @@ def train_step(model, optimizer, batch):
     return loss.detach()
 
 
-def synchronize():
-    torch.cuda.synchronize()
+def synchronize(device):
+    torch.cuda.synchronize(device)
 
     if dist.is_initialized():
         dist.barrier()
 
-    torch.cuda.synchronize()
+    torch.cuda.synchronize(device)
 
 
 def benchmark(
     model,
     optimizer,
     batch,
-    local_rank,
+    device,
 ):
     model.train()
 
-    for _ in range(WARMUP_STEPS):
-        train_step(
+    if dist.get_rank() == 0:
+        log(f"Warmup: starting {WARMUP_STEPS} step(s).")
+
+    for step in range(WARMUP_STEPS):
+        loss = train_step(
             model=model,
             optimizer=optimizer,
             batch=batch,
         )
 
-    synchronize()
+        if dist.get_rank() == 0:
+            log(
+                f"Warmup: step {step + 1}/{WARMUP_STEPS}, "
+                f"loss={loss.item():.4f}"
+            )
 
-    torch.cuda.reset_peak_memory_stats(
-        local_rank
-    )
+    synchronize(device)
+
+    torch.cuda.reset_peak_memory_stats(device)
+
+    if dist.get_rank() == 0:
+        log(f"Benchmark: starting {BENCHMARK_STEPS} step(s).")
 
     start = time.perf_counter()
     final_loss = None
 
-    for _ in range(BENCHMARK_STEPS):
+    for step in range(BENCHMARK_STEPS):
         final_loss = train_step(
             model=model,
             optimizer=optimizer,
             batch=batch,
         )
 
-    synchronize()
+        if dist.get_rank() == 0:
+            log(
+                f"Benchmark: step {step + 1}/{BENCHMARK_STEPS}, "
+                f"loss={final_loss.item():.4f}"
+            )
+
+    synchronize(device)
 
     total_time_s = time.perf_counter() - start
     world_size = dist.get_world_size()
@@ -204,7 +278,7 @@ def benchmark(
             / total_time_s
         ),
         "peak_vram_gb": (
-            torch.cuda.max_memory_allocated(local_rank)
+            torch.cuda.max_memory_allocated(device)
             / 1024**3
         ),
         "final_loss": (
@@ -240,26 +314,33 @@ def save_result(row):
 
 
 def main():
-    local_rank = setup_distributed()
+    local_rank = None
+    device = None
 
     try:
+        local_rank, device = setup_distributed()
+
         rank = dist.get_rank()
         world_size = dist.get_world_size()
 
         if rank == 0:
-            print("=== Phase 6 DDP LoRA Scaling ===")
-            print(f"Model:             {MODEL_NAME}")
-            print(f"GPU:               {torch.cuda.get_device_name(local_rank)}")
-            print(f"World size:        {world_size}")
-            print(f"Per-device batch:  {PER_DEVICE_BATCH_SIZE}")
-            print(f"Global batch:      {PER_DEVICE_BATCH_SIZE * world_size}")
-            print(f"Sequence length:   {SEQUENCE_LENGTH}")
-            print(f"Warmup steps:      {WARMUP_STEPS}")
-            print(f"Benchmark steps:   {BENCHMARK_STEPS}")
-            print()
+            log("=== Phase 6 DDP LoRA Scaling ===")
+            log(f"Model:             {MODEL_NAME}")
+            log(f"GPU:               {torch.cuda.get_device_name(device)}")
+            log(f"World size:        {world_size}")
+            log(f"Per-device batch:  {PER_DEVICE_BATCH_SIZE}")
+            log(
+                f"Global batch:      "
+                f"{PER_DEVICE_BATCH_SIZE * world_size}"
+            )
+            log(f"Sequence length:   {SEQUENCE_LENGTH}")
+            log(f"Warmup steps:      {WARMUP_STEPS}")
+            log(f"Benchmark steps:   {BENCHMARK_STEPS}")
+            log("")
 
         model = build_model(
-            local_rank=local_rank
+            local_rank=local_rank,
+            device=device,
         )
 
         optimizer = build_optimizer(
@@ -267,7 +348,7 @@ def main():
         )
 
         batch = build_batch(
-            local_rank=local_rank,
+            device=device,
             vocab_size=model.module.config.vocab_size,
         )
 
@@ -275,7 +356,7 @@ def main():
             model=model,
             optimizer=optimizer,
             batch=batch,
-            local_rank=local_rank,
+            device=device,
         )
 
         if rank == 0:
@@ -285,7 +366,7 @@ def main():
                 ),
                 "strategy": "ddp_lora_weak_scaling",
                 "model": MODEL_NAME,
-                "gpu": torch.cuda.get_device_name(local_rank),
+                "gpu": torch.cuda.get_device_name(device),
                 "precision": "bfloat16",
                 "world_size": world_size,
                 "per_device_batch_size": PER_DEVICE_BATCH_SIZE,
@@ -301,29 +382,31 @@ def main():
 
             save_result(row)
 
-            print("=== Result ===")
-            print(
+            log("=== Result ===")
+            log(
                 f"Average step: "
                 f"{result['average_step_time_ms']:.3f} ms"
             )
-            print(
+            log(
                 f"Throughput:   "
                 f"{result['tokens_per_second']:.2f} tok/s"
             )
-            print(
+            log(
                 f"Peak VRAM:    "
                 f"{result['peak_vram_gb']:.2f} GB"
             )
-            print(
+            log(
                 f"Final loss:   "
                 f"{result['final_loss']:.4f}"
             )
-            print(
+            log(
                 f"Saved:        {RESULT_FILE}"
             )
 
     finally:
         if dist.is_initialized():
+            if dist.get_rank() == 0:
+                log("Distributed cleanup: destroying process group.")
             dist.destroy_process_group()
 
 
