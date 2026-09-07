@@ -1,0 +1,3 @@
+timestamp,strategy,model,gpu,precision,world_size,per_device_batch_size,global_batch_size,sequence_length,warmup_steps,benchmark_steps,total_time_s,average_step_time_ms,global_tokens,tokens_per_second,peak_vram_gb,final_loss
+2026-08-31T23:06:34,fsdp2_lora,deepseek-ai/DeepSeek-R1-Distill-Qwen-7B,NVIDIA A100-SXM4-80GB,bfloat16,2,2,4,512,3,10,2.8754294181708246,287.54294181708246,20480,7122.414436807197,16.658533573150635,13.28653621673584
+2026-08-31T23:11:15,deepspeed_zero3_lora,deepseek-ai/DeepSeek-R1-Distill-Qwen-7B,NVIDIA A100-SXM4-80GB,bfloat16,2,2,4,512,3,10,5.002569442847744,500.2569442847744,20480,4093.8961935412203,16.916719436645508,13.301365852355957
