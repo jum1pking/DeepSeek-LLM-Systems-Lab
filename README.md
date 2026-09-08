@@ -504,6 +504,7 @@ results/training/phase6_profiles/
 
 ```text
 DeepSeek-LLM-Systems-Lab/
+├── assets/
 ├── configs/
 ├── datasets/
 ├── training/
