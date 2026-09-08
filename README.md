@@ -142,6 +142,9 @@ Profiler 同时观察到 Gradient Checkpointing 引起的 forward recomputation�
 
 在当前 `1.5B / batch=1 / seq=128` workload 下，recomputation 成本明显高于其带来的少量 activation-memory 节省。
 
+![Training Memory–Throughput Trade-off](assets/training_memory_throughput.png)
+
+
 ## 1.4 Batch Size 扩展与吞吐变化（Batch Scaling）
 
 | Batch Size | Throughput |
@@ -338,6 +341,8 @@ KV Cache 将 Decode Throughput 提升约 **1.44×**。该短序列实验聚焦 O
 
 batch≈128 后 throughput 增益明显下降、TPOT 开始快速上升。真实 serving 目标不应只是最大 tokens/s，而应寻找 **Throughput–Latency Operating Point**。
 
+![vLLM Batch Scaling](assets/vllm_batch_scaling.png)
+
 ## 4.4 在线连续批处理（Online Continuous Batching）
 
 使用 `vllm serve + vllm bench serve` 构造 variable-length Poisson arrivals。
@@ -404,6 +409,8 @@ Fusion 的收益不仅来自减少 launch，还来自避免 `x + residual` 中�
 |---:|---:|---:|---:|---:|
 | 512 | 11.131 μs | 8.219 μs | 1.354× | 20/20 |
 | 2048 | 37.720 μs | 23.094 μs | 1.633× | 20/20 |
+
+![Triton vs Native CUDA Latency](assets/triton_cuda_latency.png)
 
 实验期间的 Nsight Compute 分析未显示 register spilling 或 occupancy collapse 是当前性能差距的主要原因，并观察到 Triton 实现在 global-load 请求、DRAM throughput、shared-memory footprint 与 reduction path 上具有更有利的特征。
 
