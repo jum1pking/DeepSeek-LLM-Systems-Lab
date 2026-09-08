@@ -405,16 +405,11 @@ Fusion 的收益不仅来自减少 launch，还来自避免 `x + residual` 中�
 | 512 | 11.131 μs | 8.219 μs | 1.354× | 20/20 |
 | 2048 | 37.720 μs | 23.094 μs | 1.633× | 20/20 |
 
-Nsight Compute 排除了 register spilling 和 occupancy collapse 作为主要原因。
+实验期间的 Nsight Compute 分析未显示 register spilling 或 occupancy collapse 是当前性能差距的主要原因，并观察到 Triton 实现在 global-load 请求、DRAM throughput、shared-memory footprint 与 reduction path 上具有更有利的特征。
 
-更强的证据包括：
+这些 profiler 观察用于辅助解释 benchmark 结果；当前仓库保留性能测试数据，但未包含该组实验的完整原始 Nsight Compute report，因此不将具体 profiler 计数作为可独立复核的正式结论。
 
-- Triton global-load requests 约少 **8×**
-- Triton DRAM throughput 更高
-- Triton shared-memory footprint 更小
-- CUDA shared-memory tree reduction 需要更多同步
-
-因此当前差距更符合 **Memory Instruction Efficiency + Reduction Strategy** 的差异。
+当前结果更符合 **Memory Instruction Efficiency + Reduction Strategy** 差异所带来的性能影响。
 
 结论严格限定于：**当前 CUDA implementation × Triton implementation × GPU / workload**。
 
@@ -493,7 +488,8 @@ results/training/phase6_nccl_allreduce.csv
 results/training/phase6_profiles/
 ```
 
-正式结果采用 CSV / JSON benchmark output、Nsight `.ncu-rep`、PyTorch Profiler trace 保存。README 中的主要数字均可回溯至仓库中的正式结果文件。
+正式性能结果主要以 CSV / JSON benchmark output 保存；部分 Profiling 结果保留为导出的文本、CSV 或 trace，完整原始 profiler report 未全部提交。README 中的性能数字以仓库现有 benchmark 结果为依据，Profiler 结论主要作为实验期间的分析证据。
+
 
 ---
 
