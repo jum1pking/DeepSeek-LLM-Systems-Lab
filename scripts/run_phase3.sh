@@ -34,7 +34,7 @@ NSYS_DIR="$PROFILER_DIR/nsys_single_lora"
 usage() {
     cat <<'USAGE'
 Usage:
-  ./scripts/run_phase3_experiments.sh <command> [args]
+  ./scripts/run_phase3.sh <command> [args]
 
 Phase 3.6 — DeepSpeed / ZeRO
   zero0                       Run ZeRO-0 20-step benchmark
