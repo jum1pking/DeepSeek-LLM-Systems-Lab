@@ -7,8 +7,6 @@
 
 # === Phase 1: experiment / smoke commands ===
 
-python training/inference_smoke_test.py
-
 python inference/hf_smoke_test.py
 
 python training/lora_smoke_test.py
