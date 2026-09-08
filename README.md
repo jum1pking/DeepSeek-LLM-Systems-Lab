@@ -595,13 +595,10 @@ Concurrent Batching 可以把 aggregate throughput 提升到约 5.66k tok/s，�
 - Triton / CUDA Kernel；
 - 结果适用范围与工程结论。
 
-建议在仓库中提供：
+完整技术报告：
 
-```text
-docs/DeepSeek_LLM_Systems_Lab_Technical_Report_CN.pdf
-```
+[DeepSeek LLM Systems Lab 技术报告（DOCX）](docs/DeepSeek_LLM_Systems_Lab_技术报告.docx)
 
-并在此处添加正式 PDF 链接。
 
 ---
 
