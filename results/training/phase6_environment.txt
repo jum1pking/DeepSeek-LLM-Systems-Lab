@@ -1,0 +1,10 @@
+=== Environment ===
+Python: 3.12.3
+PyTorch: 2.8.0+cu128
+CUDA: 12.8
+GPU count: 2
+NCCL available: True
+NCCL version: (2, 27, 3)
+GPU 0: NVIDIA A100-SXM4-80GB | VRAM=79.25 GB | CC=8.0
+GPU 1: NVIDIA A100-SXM4-80GB | VRAM=79.25 GB | CC=8.0
+
