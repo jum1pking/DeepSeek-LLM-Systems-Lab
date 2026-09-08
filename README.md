@@ -469,6 +469,16 @@ bash scripts/run_phase4.sh
 bash scripts/run_phase5.sh
 ```
 
+### 环境说明
+
+本项目不同阶段涉及训练、推理 Serving 与 GPU Profiling，对 CUDA / PyTorch 及工具链的版本要求不同，因此未强制使用单一 Python 环境覆盖全部实验。
+
+- `requirements.txt`：记录本地训练、量化及 GPU Kernel 实验使用的核心 Python 依赖；
+- `requirements-vllm.txt`：记录独立 vLLM 推理环境的核心依赖；
+- PyTorch / CUDA 版本根据对应实验环境单独配置，不在通用 requirements 中统一锁定；
+- Nsight / CUPTI 等 Profiling 工具独立于核心 Python 依赖管理，不由 `requirements.txt` 安装。
+
+
 Phase 6 云端入口与正式结果位于：
 
 ```text

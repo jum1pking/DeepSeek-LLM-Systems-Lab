@@ -1,0 +1,17 @@
+# Core LLM / training
+transformers==5.15.1
+accelerate==1.14.0
+safetensors==0.8.0
+peft==0.20.0
+datasets==5.0.1
+trl==1.10.0
+numpy==2.3.5
+
+# Distributed training
+deepspeed==0.19.6
+
+# Quantization
+bitsandbytes==0.50.2
+
+# GPU kernels
+triton==3.7.1
