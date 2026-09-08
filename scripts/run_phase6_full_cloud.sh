@@ -15,10 +15,14 @@ export NCCL_DEBUG=WARN
 
 RESULT_DIR="$ROOT_DIR/results/training"
 LOG_ROOT="/workspace/phase6-logs"
-LOG_DIR="$LOG_ROOT/$RUN_ID"
 PROFILE_DIR="$RESULT_DIR/phase6_profiles"
 
-mkdir -p "$RESULT_DIR" "$LOG_DIR" "$PROFILE_DIR"
+# Define the run ID before using it in paths.
+RUN_ID="${PHASE6_RUN_ID:-$(date -u +%Y%m%dT%H%M%SZ)}"
+LOG_DIR="$LOG_ROOT/$RUN_ID"
+
+# PROFILE_DIR is created after previous artifacts are archived.
+mkdir -p "$RESULT_DIR" "$LOG_DIR"
 
 if [[ ! -x "$PYTHON" ]]; then
     echo "ERROR: Phase 6 venv Python not found: $PYTHON" >&2
@@ -42,7 +46,6 @@ echo "Phase 6 full 2×A100 cloud run"
 echo "============================================================"
 
 # Preserve previous results before starting a new full run.
-RUN_ID="${PHASE6_RUN_ID:-$(date -u +%Y%m%dT%H%M%SZ)}"
 ARCHIVE_DIR="$RESULT_DIR/archive/$RUN_ID"
 
 PREVIOUS_ARTIFACTS=(
