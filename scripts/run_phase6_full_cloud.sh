@@ -4,7 +4,8 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
-VENV="/workspace/phase6-venv"
+# prepare_phase6_cloud.sh creates or restores the venv at this path.
+VENV="${PHASE6_VENV:-/root/phase6-venv}"
 PYTHON="$VENV/bin/python"
 
 export HF_HOME="/workspace/huggingface-cache"
@@ -13,7 +14,8 @@ export PYTHONUNBUFFERED=1
 export NCCL_DEBUG=WARN
 
 RESULT_DIR="$ROOT_DIR/results/training"
-LOG_DIR="/workspace/phase6-logs"
+LOG_ROOT="/workspace/phase6-logs"
+LOG_DIR="$LOG_ROOT/$RUN_ID"
 PROFILE_DIR="$RESULT_DIR/phase6_profiles"
 
 mkdir -p "$RESULT_DIR" "$LOG_DIR" "$PROFILE_DIR"
@@ -39,13 +41,36 @@ echo "============================================================"
 echo "Phase 6 full 2×A100 cloud run"
 echo "============================================================"
 
-rm -f \
-    "$RESULT_DIR/phase6_nccl_allreduce.csv" \
-    "$RESULT_DIR/phase6_ddp_scaling.csv" \
-    "$RESULT_DIR/phase6_strategy_comparison.csv" \
-    "$RESULT_DIR/phase6_final_summary.csv"
+# Preserve previous results before starting a new full run.
+RUN_ID="${PHASE6_RUN_ID:-$(date -u +%Y%m%dT%H%M%SZ)}"
+ARCHIVE_DIR="$RESULT_DIR/archive/$RUN_ID"
 
-rm -rf "$PROFILE_DIR"
+PREVIOUS_ARTIFACTS=(
+    "$RESULT_DIR/phase6_nccl_allreduce.csv"
+    "$RESULT_DIR/phase6_ddp_scaling.csv"
+    "$RESULT_DIR/phase6_strategy_comparison.csv"
+    "$RESULT_DIR/phase6_final_summary.csv"
+    "$RESULT_DIR/phase6_environment.txt"
+    "$RESULT_DIR/phase6_topology.txt"
+    "$PROFILE_DIR"
+)
+
+ARCHIVED=false
+
+for artifact in "${PREVIOUS_ARTIFACTS[@]}"; do
+    if [[ -e "$artifact" ]]; then
+        mkdir -p "$ARCHIVE_DIR"
+        mv "$artifact" "$ARCHIVE_DIR/"
+        ARCHIVED=true
+    fi
+done
+
+if [[ "$ARCHIVED" == true ]]; then
+    echo "Previous Phase 6 results archived to: $ARCHIVE_DIR"
+else
+    echo "No previous Phase 6 results found."
+fi
+
 mkdir -p "$PROFILE_DIR"
 
 echo "=== Environment ===" | tee "$RESULT_DIR/phase6_environment.txt"
@@ -142,3 +167,10 @@ CUDA_VISIBLE_DEVICES=0,1 \
 
 echo
 echo "Phase 6 experimental stages completed."
+echo
+echo "============================================================"
+echo "Phase 6 full run completed."
+echo "Run ID:  $RUN_ID"
+echo "Results: $RESULT_DIR"
+echo "Logs:    $LOG_DIR"
+echo "============================================================"
